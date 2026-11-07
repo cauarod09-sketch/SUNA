@@ -1,7 +1,7 @@
 // SUNA · Edge Function `signup`
-// Cria a conta já ativa (sem e-mail de confirmação), mas SOMENTE para e-mails com compra aprovada.
+// Cria a conta já ativa, sem e-mail de confirmação e sem verificação de compra.
+// O acesso ao app é distribuído só para quem comprou (fora do app); o Supabase apenas guarda contas e registros.
 // O app chama esta função no cadastro e, em seguida, faz login com e-mail e senha.
-// A trava do banco (gatilho suna_gate_signup em auth.users) continua valendo como segunda barreira.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
 const cors = {
@@ -38,17 +38,11 @@ Deno.serve(async (req) => {
     return json({ error: 'weak_password' }, 400);
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
-
-  const { data: bought, error: pe } = await admin.from('purchases').select('id').eq('email', email).eq('status', 'approved').limit(1);
-  if (pe) return json({ error: 'server' }, 500);
-  if (!bought?.length) return json({ error: 'no_purchase' }, 403);
-
   const { error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
   if (error) {
     const m = error.message.toLowerCase();
     if (m.includes('already') || m.includes('registered') || m.includes('exists')) return json({ error: 'exists' }, 409);
     if (m.includes('password')) return json({ error: 'weak_password' }, 400);
-    if (m.includes('suna_no_purchase') || m.includes('database error')) return json({ error: 'no_purchase' }, 403);
     return json({ error: 'server' }, 500);
   }
   return json({ ok: true });

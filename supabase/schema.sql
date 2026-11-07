@@ -2,36 +2,17 @@
 -- SUNA — Seu Glow Up em 21 Dias · banco de dados (Supabase / Postgres)
 -- Cole no SQL Editor do Supabase e execute. Pode ser executado de novo.
 --
+-- O Supabase guarda apenas contas (login/cadastro) e os registros de cada usuária.
+-- Não há verificação de compra nem confirmação de e-mail: o link do app é entregue só a quem comprou.
+--
 -- Segurança:
---  • Compras ficam em `purchases`, só o servidor (webhook / painel) escreve. Ninguém do app lê.
---  • O cadastro só é aceito se o e-mail tiver compra aprovada (gatilho em auth.users).
---  • O acesso é liberado para a conta cujo e-mail tem compra aprovada (sem confirmação de e-mail;
---    a conta é criada já ativa pela Edge Function `signup`).
 --  • Cada usuária só lê e grava os próprios registros (RLS).
 --  • O dia liberado é calculado pelo relógio do SERVIDOR em America/Sao_Paulo;
 --    gravar em dia futuro é recusado pelo banco, mesmo que o relógio do aparelho seja alterado.
+--  • A data de início da jornada é definida pelo servidor uma única vez e nunca reiniciada.
 -- =====================================================================
 
 create extension if not exists citext;
-
--- ---------------------------------------------------------------------
--- Compras (preenchidas pelo webhook da plataforma de pagamento ou manualmente)
--- ---------------------------------------------------------------------
-create table if not exists public.purchases (
-  id bigint generated always as identity primary key,
-  email citext not null,
-  source text not null default 'manual',
-  order_id text,
-  status text not null default 'approved' check (status in ('approved', 'refunded', 'chargeback', 'canceled')),
-  raw jsonb,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (source, order_id)
-);
-create index if not exists purchases_email_idx on public.purchases (email);
-alter table public.purchases enable row level security;
-revoke all on public.purchases from anon, authenticated;
--- Sem políticas: apenas a service role (servidor) acessa.
 
 -- ---------------------------------------------------------------------
 -- Perfil e jornada
@@ -60,18 +41,12 @@ create policy profiles_update_own on public.profiles for update to authenticated
 -- ---------------------------------------------------------------------
 -- Funções de acesso e calendário
 -- ---------------------------------------------------------------------
+-- Toda conta logada tem acesso.
 create or replace function public.has_access()
 returns boolean
-language sql stable security definer
+language sql stable
 set search_path = public, pg_temp
-as $$
-  select exists (
-    select 1
-    from auth.users u
-    join public.purchases p on p.email = u.email::citext and p.status = 'approved'
-    where u.id = auth.uid()
-  );
-$$;
+as $$ select auth.uid() is not null; $$;
 
 -- Dia corrido da jornada pela data do servidor em America/Sao_Paulo (1 no dia de início).
 create or replace function public.journey_day()
@@ -86,6 +61,7 @@ $$;
 create or replace function public.server_now()
 returns timestamptz
 language sql stable
+set search_path = pg_catalog, pg_temp
 as $$ select now(); $$;
 
 revoke all on function public.has_access() from public, anon;
@@ -136,34 +112,19 @@ create policy records_update_own on public.day_records for update to authenticat
 
 -- updated_at automático
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = pg_catalog, pg_temp
+as $$
 begin new.updated_at := now(); return new; end $$;
 
 drop trigger if exists day_records_touch on public.day_records;
 create trigger day_records_touch before update on public.day_records for each row execute function public.touch_updated_at();
 drop trigger if exists profiles_touch on public.profiles;
 create trigger profiles_touch before update on public.profiles for each row execute function public.touch_updated_at();
-drop trigger if exists purchases_touch on public.purchases;
-create trigger purchases_touch before update on public.purchases for each row execute function public.touch_updated_at();
 
 -- ---------------------------------------------------------------------
--- Cadastro: só com compra aprovada no mesmo e-mail
+-- Perfil criado automaticamente no cadastro
 -- ---------------------------------------------------------------------
-create or replace function public.gate_signup()
-returns trigger
-language plpgsql security definer
-set search_path = public, pg_temp
-as $$
-begin
-  if not exists (select 1 from public.purchases p where p.email = new.email::citext and p.status = 'approved') then
-    raise exception 'SUNA_NO_PURCHASE: e-mail sem compra aprovada';
-  end if;
-  return new;
-end $$;
-
-drop trigger if exists suna_gate_signup on auth.users;
-create trigger suna_gate_signup before insert on auth.users for each row execute function public.gate_signup();
-
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql security definer
@@ -175,12 +136,13 @@ begin
   on conflict (id) do nothing;
   return new;
 end $$;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
 
 drop trigger if exists suna_on_auth_user_created on auth.users;
 create trigger suna_on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 
 -- ---------------------------------------------------------------------
--- Início do app: valida acesso, cria a jornada uma única vez e devolve a hora do servidor
+-- Início do app: cria a jornada uma única vez e devolve a hora do servidor
 -- ---------------------------------------------------------------------
 create or replace function public.suna_bootstrap()
 returns jsonb
@@ -189,7 +151,6 @@ set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
-  ok boolean;
   prof public.profiles;
 begin
   if uid is null then raise exception 'not authenticated'; end if;
@@ -198,19 +159,16 @@ begin
   select u.id, left(coalesce(u.raw_user_meta_data ->> 'name', ''), 80), u.email from auth.users u where u.id = uid
   on conflict (id) do nothing;
 
-  ok := public.has_access();
-
-  if ok then
-    update public.profiles
-      set journey_start = (now() at time zone 'America/Sao_Paulo')::date
-      where id = uid and journey_start is null;
-  end if;
+  -- Dia 1 = data do primeiro acesso (São Paulo). Definido uma única vez, nunca reiniciado.
+  update public.profiles
+    set journey_start = (now() at time zone 'America/Sao_Paulo')::date
+    where id = uid and journey_start is null;
 
   select * into prof from public.profiles where id = uid;
 
   return jsonb_build_object(
     'server_now', now(),
-    'access', case when ok then 'ok' else 'no_purchase' end,
+    'access', 'ok',
     'profile', jsonb_build_object(
       'id', prof.id, 'name', prof.name, 'email', prof.email, 'journey_start', prof.journey_start,
       'onboarding_done', prof.onboarding_done, 'gpt_opened_at', prof.gpt_opened_at
@@ -220,18 +178,3 @@ end $$;
 
 revoke all on function public.suna_bootstrap() from public, anon;
 grant execute on function public.suna_bootstrap() to authenticated;
-
--- ---------------------------------------------------------------------
--- Como liberar uma compra manualmente (ex.: testes ou vendas fora da plataforma):
---   insert into public.purchases (email, source) values ('cliente@exemplo.com', 'manual');
--- Para revogar:
---   update public.purchases set status = 'refunded' where email = 'cliente@exemplo.com';
--- ---------------------------------------------------------------------
-
--- ---------------------------------------------------------------------
--- Endurecimento (avisos do Security Advisor)
--- ---------------------------------------------------------------------
-revoke all on function public.gate_signup() from public, anon, authenticated;
-revoke all on function public.handle_new_user() from public, anon, authenticated;
-alter function public.server_now() set search_path = pg_catalog, pg_temp;
-alter function public.touch_updated_at() set search_path = pg_catalog, pg_temp;

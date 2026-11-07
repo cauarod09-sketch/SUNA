@@ -1,6 +1,6 @@
 // Camada de dados da SUNA.
 // Produção: Supabase (Auth + Postgres com RLS). A data do servidor decide o dia liberado.
-// Demonstração (VITE_DEMO_MODE=true): tudo fica no navegador, sem compra e sem servidor. Não publicar assim.
+// Demonstração (VITE_DEMO_MODE=true): tudo fica no navegador, sem servidor. Não publicar assim.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { DEMO_MODE, SUPABASE_ANON_KEY, SUPABASE_URL, TOTAL_DAYS } from '../config';
 import { rawJourneyDay, spDateKey } from './time';
@@ -53,13 +53,9 @@ function normalizeRecord(row: Record<string, unknown>): DayRecord {
 
 function translateAuthError(message: string): string {
   const m = message.toLowerCase();
-  if (m.includes('database error saving new user') || m.includes('suna_no_purchase'))
-    return 'Não encontramos uma compra aprovada com este e-mail. Use exatamente o e-mail informado na compra. Se a compra foi feita agora, aguarde alguns minutos e tente de novo.';
   if (m.includes('already registered') || m.includes('already been registered'))
     return 'Este e-mail já tem uma conta. Entre pela tela de login ou recupere sua senha.';
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
-  if (m.includes('email not confirmed'))
-    return 'Seu e-mail ainda não foi confirmado. Abra o link que enviamos para sua caixa de entrada (confira também o spam).';
   if (m.includes('password should be at least') || m.includes('weak password'))
     return 'Sua senha precisa ter pelo menos 8 caracteres, com letras e números.';
   if (m.includes('rate limit') || m.includes('too many'))
@@ -96,7 +92,7 @@ function supabaseBackend(): Backend {
       return () => data.subscription.unsubscribe();
     },
     async signUp(name, email, password) {
-      // Sem confirmação de e-mail: a Edge Function `signup` confere a compra no servidor e cria a conta já ativa.
+      // Sem confirmação de e-mail: a Edge Function `signup` cria a conta já ativa no servidor.
       const cleanEmail = email.trim().toLowerCase();
       let res: Response;
       try {
@@ -111,7 +107,6 @@ function supabaseBackend(): Backend {
       if (!res.ok) {
         const code = ((await res.json().catch(() => ({}))) as { error?: string }).error;
         const map: Record<string, string> = {
-          no_purchase: 'suna_no_purchase',
           exists: 'already registered',
           weak_password: 'weak password',
         };

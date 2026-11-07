@@ -17,8 +17,8 @@ A especificação de referência é o "Prompt Mestre Final" (nov/2026). Antes de
 
 ## Segurança
 
-- Acesso = compra aprovada em `purchases` (só servidor escreve). Sem confirmação de e-mail (decisão do produto): o cadastro passa pela Edge Function `signup`. Não desativar RLS. Nunca expor a service role no frontend.
-- `VITE_DEMO_MODE=true` é só para teste local (sem compra, dados no navegador). Nunca publicar assim.
+- Sem verificação de compra e sem confirmação de e-mail (decisão do produto): o Supabase só guarda contas e registros; o cadastro passa pela Edge Function `signup`. Não desativar RLS. Nunca expor a service role no frontend.
+- `VITE_DEMO_MODE=true` é só para teste local (sem servidor, dados no navegador). Nunca publicar assim.
 
 ## Antes de dizer que terminou
 

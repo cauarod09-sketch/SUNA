@@ -22,7 +22,7 @@ export default function App() {
 }
 
 function Root() {
-  const { status, errorMsg, reload, access, signOut, session } = useApp();
+  const { status, errorMsg, reload, signOut, session } = useApp();
 
   if (status === 'config_missing')
     return (
@@ -55,22 +55,10 @@ function Root() {
     return (
       <Centered>
         <MailWarning size={40} className="accent-icon" />
-        {access === 'unconfirmed' ? (
-          <>
-            <h1 className="h-serif">Confirme seu e-mail</h1>
-            <p className="muted">Abra o link que enviamos para {session?.email} para ativar seus 21 dias.</p>
-          </>
-        ) : (
-          <>
-            <h1 className="h-serif">Acesso não encontrado</h1>
-            <p className="muted">
-              Não encontramos uma compra ativa para {session?.email}. Se você comprou com outro e-mail, entre com ele. Se precisar de ajuda,
-              fale com o suporte informado na sua compra.
-            </p>
-          </>
-        )}
+        <h1 className="h-serif">Não foi possível abrir sua jornada</h1>
+        <p className="muted">Tente novamente em instantes. Se continuar, saia e entre de novo com {session?.email}.</p>
         <button className="btn btn-primary" onClick={reload}>
-          <RefreshCw size={16} /> VERIFICAR NOVAMENTE
+          <RefreshCw size={16} /> TENTAR NOVAMENTE
         </button>
         <button className="btn btn-ghost" onClick={() => void signOut()}>
           SAIR
@@ -177,7 +165,7 @@ function DemoBar() {
   };
   return (
     <div className="demo-bar" role="note">
-      <span>MODO DEMONSTRAÇÃO · sem validação de compra · dados só neste aparelho</span>
+      <span>MODO DEMONSTRAÇÃO · sem servidor · dados só neste aparelho</span>
       <span className="demo-ctrl">
         Relógio +{off}d
         <button onClick={() => set(off - 1)} aria-label="Voltar um dia">

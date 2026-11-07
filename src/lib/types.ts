@@ -33,7 +33,7 @@ export interface DayRecord {
 
 export type DayPatch = Partial<Omit<DayRecord, 'day'>>;
 
-export type AccessState = 'ok' | 'no_purchase' | 'unconfirmed';
+export type AccessState = 'ok';
 
 export interface BootstrapResult {
   serverNow: number;

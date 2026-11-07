@@ -37,7 +37,7 @@ export const ASSETS = {
   character: '/assets/suna/personagem-suna.png',
 };
 
-/** Modo demonstração: só existe quando pedido explicitamente. Sem compra, sem servidor. Não publicar assim. */
+/** Modo demonstração: só existe quando pedido explicitamente. Sem servidor. Não publicar assim. */
 export const DEMO_MODE = env.VITE_DEMO_MODE === 'true';
 export const SUPABASE_URL = (env.VITE_SUPABASE_URL ?? '').trim();
 export const SUPABASE_ANON_KEY = (env.VITE_SUPABASE_ANON_KEY ?? '').trim();

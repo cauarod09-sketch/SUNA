@@ -10,37 +10,26 @@ npm install
 npm run dev
 ```
 
-Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`: tudo fica salvo no navegador e **não há validação de compra**. A faixa escura no topo permite avançar o relógio (+/−) para testar os 21 dias. **Não publique assim.**
+Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`: tudo fica salvo só no navegador, sem servidor. A faixa escura no topo permite avançar o relógio (+/−) para testar os 21 dias. **Não publique assim.**
 
 ## Colocar em produção
 
-1. **Supabase**: crie um projeto, abra o SQL Editor e execute `supabase/schema.sql`.
-2. **Autenticação**: não há confirmação de e-mail. O cadastro passa pela Edge Function `signup`, que confere a compra e cria a conta já ativa (`supabase functions deploy signup`). Em URL Configuration, coloque o domínio do app em *Site URL* e *Redirect URLs* (usado só na recuperação de senha).
-3. **Webhook de compra**: publique `supabase/functions/purchase-webhook` (`supabase functions deploy purchase-webhook`) e configure um dos segredos:
-   - Hotmart: `HOTMART_HOTTOK` (o hottok da sua conta). URL do webhook: `https://<projeto>.supabase.co/functions/v1/purchase-webhook`
-   - Kiwify: `KIWIFY_TOKEN` (token do webhook). A Kiwify envia `?signature=` e o app confere.
-   - Outra plataforma: `SUNA_WEBHOOK_TOKEN` + header `x-suna-token`, corpo `{ "email", "order_id", "status": "approved" | "refunded" | "chargeback" | "canceled" }`.
-   - Opcional: `SUNA_PRODUCT_IDS` para aceitar só o produto SUNA.
-   - Liberar manualmente: `insert into public.purchases (email, source) values ('cliente@exemplo.com', 'manual');`
-4. **`.env` de produção** (veja `.env.example`): `VITE_DEMO_MODE=false`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e `VITE_SUNA_CUSTOM_GPT_URL` (link do seu GPT personalizado).
-5. `npm run build` e publique a pasta `dist/` (Vercel, Netlify etc.), com HTTPS.
-6. Revise `public/termos.html` e `public/privacidade.html` (são modelos) com seus dados e assessoria jurídica.
+O Supabase guarda apenas as contas (cadastro e login) e os registros de cada usuária. **Não há verificação de compra nem confirmação de e-mail**: qualquer pessoa com o link consegue se cadastrar, então entregue o link só para quem comprou.
 
-## Estado atual do Supabase (projeto `suna`, sa-east-1)
+1. **Supabase** (projeto `suna`, sa-east-1 — já configurado): para recriar em outro projeto, execute `supabase/schema.sql` no SQL Editor e publique a função `signup` (`supabase functions deploy signup`).
+2. **.env de produção** (veja `.env.example`): `VITE_DEMO_MODE=false`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. O link do GPT já está em `src/config.ts`.
+3. `npm run build` e publique a pasta `dist/` (Vercel, Netlify etc.), com HTTPS.
+4. No painel do Supabase, **Authentication > URL Configuration**: coloque o domínio do app em *Site URL* e *Redirect URLs*.
+5. **"Esqueci minha senha"** envia e-mail: para funcionar com qualquer usuária, configure um SMTP próprio em **Authentication > Emails > SMTP** (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto. Cadastro e login não dependem de e-mail.
+6. Opcional: excluir a função antiga `purchase-webhook` em **Edge Functions** (está desativada e não faz nada).
+7. Revise `public/termos.html` e `public/privacidade.html` (são modelos).
 
-Já feito: schema aplicado (com RLS), funções `signup` e `purchase-webhook` publicadas, `.env` local apontando para o projeto, regras testadas no banco (trava de cadastro sem compra, cadastro sem confirmação com login imediato, e-mail repetido recusado, dia futuro recusado, isolamento entre usuárias, reembolso corta o acesso).
+## Como os dados são protegidos
 
-Falta fazer no painel do Supabase (não dá para configurar por aqui):
-1. **Authentication > URL Configuration**: *Site URL* = domínio onde o app vai ficar (e `http://localhost:5173` em *Redirect URLs* para testes).
-2. **Authentication > Emails > SMTP** (só para "Esqueci minha senha"): configurar um SMTP próprio (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto e tem limite de poucos envios por hora. O cadastro e o login não dependem de e-mail.
-3. **Edge Functions > Secrets**: `HOTMART_HOTTOK`, `KIWIFY_TOKEN` ou `SUNA_WEBHOOK_TOKEN` (conforme a plataforma). Sem segredo, o webhook responde 503 e não aceita nada.
-
-## Como o acesso é protegido
-
-- O cadastro só é aceito se o e-mail tiver compra **aprovada** (conferido na função `signup` e de novo por um gatilho no banco). Não há confirmação de e-mail (decisão do produto): quem souber o e-mail de uma compradora pode criar a conta antes dela; cada e-mail só cria uma conta.
-- Reembolso/chargeback recebido pelo webhook bloqueia o acesso na próxima abertura.
-- Cada usuária só lê e grava os próprios registros (RLS).
+- O cadastro passa pela Edge Function `signup`, que cria a conta já ativa (sem e-mail de confirmação). Cada e-mail só cria uma conta.
+- Cada usuária só lê e grava os próprios registros (RLS). Sem login, nada é lido.
 - O dia liberado vem do relógio do servidor (America/Sao_Paulo). Mudar o relógio do celular não libera dias: o banco recusa gravações em dias futuros.
+- A data do Dia 1 é definida pelo servidor no primeiro acesso e nunca é reiniciada.
 
 ## Organização
 
@@ -55,7 +44,7 @@ Falta fazer no painel do Supabase (não dá para configurar por aqui):
 | `src/lib/pdf.ts` | Planner A4 em PDF (em branco e preenchido) |
 | `src/screens/` | Boas-vindas/cadastro/login, Início, Rotina, SUNA, Evolução |
 | `supabase/schema.sql` | Tabelas, RLS e funções |
-| `supabase/functions/purchase-webhook` | Recebe compras da plataforma de pagamento |
+| `supabase/functions/signup` | Cadastro: cria a conta já ativa |
 | `public/assets/suna/` | PNGs oficiais da marca |
 | `src/config.ts` | Configurações editáveis (`SUNA_CUSTOM_GPT_URL`, caminhos dos PNGs) |
 
@@ -71,5 +60,5 @@ Tudo é salvo sozinho (checkbox na hora, textos ~0,7 s depois de parar de digita
 
 - `npm run build` e `npm test` (15 testes: roteiro, hábitos, calendário de meia-noite, cálculo de 84 componentes, estados dos blocos) passando.
 - Conferido no navegador em 375px, modo demonstração: boas-vindas → cadastro (validações) → primeiro acesso na aba SUNA com anel amarelo → link do GPT em nova aba → Início com conversa automática, digitação e pular → revelar e concluir desafio → Rotina (bloqueio de dias futuros, checklists, anotação, salvamento) → recarregar sem perder nada → Evolução (3,6% = 3/84) → Dia 7 com conquista → Dia 21 com tela final.
-- Verificado no Supabase real (07/11/2026): cadastro sem compra recusado, cadastro com compra cria conta ativa e o login funciona na hora, e-mail repetido recusado, RLS e trava de dia futuro.
-- **Não verificado ainda**: recuperação de senha (precisa de SMTP) e webhook com uma venda real da plataforma.
+- Verificado no Supabase real (07/11/2026): cadastro com qualquer e-mail cria conta ativa, login na hora, e-mail repetido recusado, Dia 1 gravado, Dia 2 recusado antes da meia-noite, sem login nada é lido.
+- **Não verificado ainda**: recuperação de senha (precisa de SMTP).
