@@ -228,3 +228,11 @@ grant execute on function public.suna_bootstrap() to authenticated;
 -- Para revogar:
 --   update public.purchases set status = 'refunded' where email = 'cliente@exemplo.com';
 -- ---------------------------------------------------------------------
+
+-- ---------------------------------------------------------------------
+-- Endurecimento (avisos do Security Advisor)
+-- ---------------------------------------------------------------------
+revoke all on function public.gate_signup() from public, anon, authenticated;
+revoke all on function public.handle_new_user() from public, anon, authenticated;
+alter function public.server_now() set search_path = pg_catalog, pg_temp;
+alter function public.touch_updated_at() set search_path = pg_catalog, pg_temp;

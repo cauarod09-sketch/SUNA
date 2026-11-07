@@ -26,6 +26,15 @@ Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`
 5. `npm run build` e publique a pasta `dist/` (Vercel, Netlify etc.), com HTTPS.
 6. Revise `public/termos.html` e `public/privacidade.html` (são modelos) com seus dados e assessoria jurídica.
 
+## Estado atual do Supabase (projeto `suna`, sa-east-1)
+
+Já feito: schema aplicado (com RLS), função `purchase-webhook` publicada, `.env` local apontando para o projeto, regras testadas no banco (trava de cadastro sem compra, e-mail não confirmado bloqueado, dia futuro recusado, isolamento entre usuárias, reembolso corta o acesso).
+
+Falta fazer no painel do Supabase (não dá para configurar por aqui):
+1. **Authentication > URL Configuration**: *Site URL* = domínio onde o app vai ficar (e `http://localhost:5173` em *Redirect URLs* para testes).
+2. **Authentication > Emails > SMTP**: configurar um SMTP próprio (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto e tem limite de poucos envios por hora — sem isso as compradoras não recebem o link de confirmação.
+3. **Edge Functions > Secrets**: `HOTMART_HOTTOK`, `KIWIFY_TOKEN` ou `SUNA_WEBHOOK_TOKEN` (conforme a plataforma). Sem segredo, o webhook responde 503 e não aceita nada.
+
 ## Como o acesso é protegido
 
 - O cadastro só é aceito se o e-mail tiver compra **aprovada** (gatilho no banco). Digitar o e-mail de outra pessoa não basta: o acesso só abre depois que o link de confirmação enviado para aquele e-mail é clicado.
