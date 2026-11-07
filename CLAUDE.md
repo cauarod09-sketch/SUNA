@@ -8,7 +8,7 @@ A especificação de referência é o "Prompt Mestre Final" (nov/2026). Antes de
 - Exatamente quatro abas, nesta ordem: **Início, Rotina, SUNA, Evolução**. Nenhuma aba extra (nem de desafios).
 - Sem diagnóstico inicial, sem treinos internos, sem dietas internas, sem IA generativa dentro do app.
 - A personagem Suna só fala o roteiro fixo de `src/content/days.ts` (21 conversas, 3 opções fixas A/B/C, 21 desafios). Não editar textos do roteiro sem pedido.
-- Orientação de treino/alimentação = GPT externo, link em `VITE_SUNA_CUSTOM_GPT_URL` (abre em nova aba). Nunca inventar o endereço.
+- Orientação de treino/alimentação = GPT externo (link em `src/config.ts`, pode ser sobrescrito por `VITE_SUNA_CUSTOM_GPT_URL`), abre em nova aba.
 - Primeiro acesso cai na aba SUNA com "COMECE POR AQUI" e anel amarelo animado; o anel some após o primeiro clique.
 - Três checklists por dia (alimentação, atividade, grupo pessoal) + desafio = 4 componentes de 25%. Progresso = concluídos / 84.
 - Dias liberados à meia-noite de America/Sao_Paulo pelo relógio do **servidor**; dias futuros bloqueados também no banco (RLS). Ausência nunca reinicia a jornada.
@@ -17,7 +17,7 @@ A especificação de referência é o "Prompt Mestre Final" (nov/2026). Antes de
 
 ## Segurança
 
-- Acesso = compra aprovada em `purchases` (só servidor escreve) + e-mail confirmado. Não desativar RLS. Nunca expor a service role no frontend.
+- Acesso = compra aprovada em `purchases` (só servidor escreve). Sem confirmação de e-mail (decisão do produto): o cadastro passa pela Edge Function `signup`. Não desativar RLS. Nunca expor a service role no frontend.
 - `VITE_DEMO_MODE=true` é só para teste local (sem compra, dados no navegador). Nunca publicar assim.
 
 ## Antes de dizer que terminou

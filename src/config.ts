@@ -5,11 +5,13 @@ const env = import.meta.env;
 
 /**
  * SUNA_CUSTOM_GPT_URL — link do GPT personalizado (personal e nutri virtual).
- * Defina VITE_SUNA_CUSTOM_GPT_URL no .env. Não inventamos o endereço:
- * enquanto estiver vazio, a aba SUNA mostra "recurso temporariamente indisponível".
+ * Para trocar, edite o valor abaixo ou defina VITE_SUNA_CUSTOM_GPT_URL no .env (o .env tem prioridade).
+ * Se ficar vazio, a aba SUNA mostra "recurso temporariamente indisponível".
  */
+const DEFAULT_GPT_URL = 'https://chatgpt.com/share/6aee175f-cf94-83e8-8a55-4768707f8862';
+
 export const SUNA_CUSTOM_GPT_URL: string = (() => {
-  const raw = (env.VITE_SUNA_CUSTOM_GPT_URL ?? '').trim();
+  const raw = (env.VITE_SUNA_CUSTOM_GPT_URL || DEFAULT_GPT_URL).trim();
   if (!raw) return '';
   try {
     const u = new URL(raw);

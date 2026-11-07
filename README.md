@@ -15,7 +15,7 @@ Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`
 ## Colocar em produção
 
 1. **Supabase**: crie um projeto, abra o SQL Editor e execute `supabase/schema.sql`.
-2. **Autenticação** (Authentication > Providers > Email): mantenha **Confirm email ligado** — é o que prova que o e-mail é da compradora. Em URL Configuration, coloque o domínio do app em *Site URL* e *Redirect URLs*.
+2. **Autenticação**: não há confirmação de e-mail. O cadastro passa pela Edge Function `signup`, que confere a compra e cria a conta já ativa (`supabase functions deploy signup`). Em URL Configuration, coloque o domínio do app em *Site URL* e *Redirect URLs* (usado só na recuperação de senha).
 3. **Webhook de compra**: publique `supabase/functions/purchase-webhook` (`supabase functions deploy purchase-webhook`) e configure um dos segredos:
    - Hotmart: `HOTMART_HOTTOK` (o hottok da sua conta). URL do webhook: `https://<projeto>.supabase.co/functions/v1/purchase-webhook`
    - Kiwify: `KIWIFY_TOKEN` (token do webhook). A Kiwify envia `?signature=` e o app confere.
@@ -28,16 +28,16 @@ Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`
 
 ## Estado atual do Supabase (projeto `suna`, sa-east-1)
 
-Já feito: schema aplicado (com RLS), função `purchase-webhook` publicada, `.env` local apontando para o projeto, regras testadas no banco (trava de cadastro sem compra, e-mail não confirmado bloqueado, dia futuro recusado, isolamento entre usuárias, reembolso corta o acesso).
+Já feito: schema aplicado (com RLS), funções `signup` e `purchase-webhook` publicadas, `.env` local apontando para o projeto, regras testadas no banco (trava de cadastro sem compra, cadastro sem confirmação com login imediato, e-mail repetido recusado, dia futuro recusado, isolamento entre usuárias, reembolso corta o acesso).
 
 Falta fazer no painel do Supabase (não dá para configurar por aqui):
 1. **Authentication > URL Configuration**: *Site URL* = domínio onde o app vai ficar (e `http://localhost:5173` em *Redirect URLs* para testes).
-2. **Authentication > Emails > SMTP**: configurar um SMTP próprio (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto e tem limite de poucos envios por hora — sem isso as compradoras não recebem o link de confirmação.
+2. **Authentication > Emails > SMTP** (só para "Esqueci minha senha"): configurar um SMTP próprio (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto e tem limite de poucos envios por hora. O cadastro e o login não dependem de e-mail.
 3. **Edge Functions > Secrets**: `HOTMART_HOTTOK`, `KIWIFY_TOKEN` ou `SUNA_WEBHOOK_TOKEN` (conforme a plataforma). Sem segredo, o webhook responde 503 e não aceita nada.
 
 ## Como o acesso é protegido
 
-- O cadastro só é aceito se o e-mail tiver compra **aprovada** (gatilho no banco). Digitar o e-mail de outra pessoa não basta: o acesso só abre depois que o link de confirmação enviado para aquele e-mail é clicado.
+- O cadastro só é aceito se o e-mail tiver compra **aprovada** (conferido na função `signup` e de novo por um gatilho no banco). Não há confirmação de e-mail (decisão do produto): quem souber o e-mail de uma compradora pode criar a conta antes dela; cada e-mail só cria uma conta.
 - Reembolso/chargeback recebido pelo webhook bloqueia o acesso na próxima abertura.
 - Cada usuária só lê e grava os próprios registros (RLS).
 - O dia liberado vem do relógio do servidor (America/Sao_Paulo). Mudar o relógio do celular não libera dias: o banco recusa gravações em dias futuros.
@@ -71,4 +71,5 @@ Tudo é salvo sozinho (checkbox na hora, textos ~0,7 s depois de parar de digita
 
 - `npm run build` e `npm test` (15 testes: roteiro, hábitos, calendário de meia-noite, cálculo de 84 componentes, estados dos blocos) passando.
 - Conferido no navegador em 375px, modo demonstração: boas-vindas → cadastro (validações) → primeiro acesso na aba SUNA com anel amarelo → link do GPT em nova aba → Início com conversa automática, digitação e pular → revelar e concluir desafio → Rotina (bloqueio de dias futuros, checklists, anotação, salvamento) → recarregar sem perder nada → Evolução (3,6% = 3/84) → Dia 7 com conquista → Dia 21 com tela final.
-- **Não verificado ainda** (exige Supabase real): cadastro com compra, confirmação de e-mail, recuperação de senha, RLS e webhook de pagamento.
+- Verificado no Supabase real (07/11/2026): cadastro sem compra recusado, cadastro com compra cria conta ativa e o login funciona na hora, e-mail repetido recusado, RLS e trava de dia futuro.
+- **Não verificado ainda**: recuperação de senha (precisa de SMTP) e webhook com uma venda real da plataforma.

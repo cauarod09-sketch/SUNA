@@ -5,7 +5,8 @@
 -- Segurança:
 --  • Compras ficam em `purchases`, só o servidor (webhook / painel) escreve. Ninguém do app lê.
 --  • O cadastro só é aceito se o e-mail tiver compra aprovada (gatilho em auth.users).
---  • O acesso só é liberado com o e-mail CONFIRMADO (prova de titularidade) + compra aprovada.
+--  • O acesso é liberado para a conta cujo e-mail tem compra aprovada (sem confirmação de e-mail;
+--    a conta é criada já ativa pela Edge Function `signup`).
 --  • Cada usuária só lê e grava os próprios registros (RLS).
 --  • O dia liberado é calculado pelo relógio do SERVIDOR em America/Sao_Paulo;
 --    gravar em dia futuro é recusado pelo banco, mesmo que o relógio do aparelho seja alterado.
@@ -68,7 +69,7 @@ as $$
     select 1
     from auth.users u
     join public.purchases p on p.email = u.email::citext and p.status = 'approved'
-    where u.id = auth.uid() and u.email_confirmed_at is not null
+    where u.id = auth.uid()
   );
 $$;
 
@@ -188,7 +189,6 @@ set search_path = public, pg_temp
 as $$
 declare
   uid uuid := auth.uid();
-  confirmed boolean;
   ok boolean;
   prof public.profiles;
 begin
@@ -198,7 +198,6 @@ begin
   select u.id, left(coalesce(u.raw_user_meta_data ->> 'name', ''), 80), u.email from auth.users u where u.id = uid
   on conflict (id) do nothing;
 
-  select u.email_confirmed_at is not null into confirmed from auth.users u where u.id = uid;
   ok := public.has_access();
 
   if ok then
@@ -211,7 +210,7 @@ begin
 
   return jsonb_build_object(
     'server_now', now(),
-    'access', case when not confirmed then 'unconfirmed' when ok then 'ok' else 'no_purchase' end,
+    'access', case when ok then 'ok' else 'no_purchase' end,
     'profile', jsonb_build_object(
       'id', prof.id, 'name', prof.name, 'email', prof.email, 'journey_start', prof.journey_start,
       'onboarding_done', prof.onboarding_done, 'gpt_opened_at', prof.gpt_opened_at

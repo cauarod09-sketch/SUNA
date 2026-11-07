@@ -1,3 +1,7 @@
 # O webhook é chamado pela plataforma de pagamento (sem login). Ele é protegido por token/assinatura próprios.
 [functions.purchase-webhook]
 verify_jwt = false
+
+# Cadastro sem confirmação de e-mail: chamado sem login, valida a compra no servidor.
+[functions.signup]
+verify_jwt = false

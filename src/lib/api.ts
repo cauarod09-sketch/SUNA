@@ -96,17 +96,30 @@ function supabaseBackend(): Backend {
       return () => data.subscription.unsubscribe();
     },
     async signUp(name, email, password) {
-      const { data, error } = await sb.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password,
-        options: { data: { name: name.trim() }, emailRedirectTo: redirect() },
-      });
+      // Sem confirmação de e-mail: a Edge Function `signup` confere a compra no servidor e cria a conta já ativa.
+      const cleanEmail = email.trim().toLowerCase();
+      let res: Response;
+      try {
+        res = await fetch(`${SUPABASE_URL}/functions/v1/signup`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY },
+          body: JSON.stringify({ name: name.trim(), email: cleanEmail, password }),
+        });
+      } catch {
+        throw new FriendlyError(translateAuthError('failed to fetch'));
+      }
+      if (!res.ok) {
+        const code = ((await res.json().catch(() => ({}))) as { error?: string }).error;
+        const map: Record<string, string> = {
+          no_purchase: 'suna_no_purchase',
+          exists: 'already registered',
+          weak_password: 'weak password',
+        };
+        throw new FriendlyError(translateAuthError(map[code ?? ''] ?? 'erro'));
+      }
+      const { error } = await sb.auth.signInWithPassword({ email: cleanEmail, password });
       if (error) throw new FriendlyError(translateAuthError(error.message));
-      // Com confirmação de e-mail ativa (obrigatória em produção) não há sessão até a confirmação.
-      // Quando o e-mail já existe, o Supabase devolve um usuário sem identidades.
-      if (data.user && data.user.identities && data.user.identities.length === 0)
-        throw new FriendlyError(translateAuthError('already registered'));
-      return { needsConfirmation: !data.session };
+      return { needsConfirmation: false };
     },
     async signIn(email, password) {
       const { error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
