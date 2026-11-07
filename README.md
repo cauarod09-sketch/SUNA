@@ -17,8 +17,7 @@ Abra http://localhost:5173. O arquivo `.env` local vem com `VITE_DEMO_MODE=true`
 O Supabase guarda apenas as contas (cadastro e login) e os registros de cada usuária. **Não há verificação de compra nem confirmação de e-mail**: qualquer pessoa com o link consegue se cadastrar, então entregue o link só para quem comprou.
 
 1. **Supabase** (projeto `suna`, sa-east-1 — já configurado): para recriar em outro projeto, execute `supabase/schema.sql` no SQL Editor e publique a função `signup` (`supabase functions deploy signup`).
-2. **.env de produção** (veja `.env.example`): `VITE_DEMO_MODE=false`, `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. O link do GPT já está em `src/config.ts`.
-3. `npm run build` e publique a pasta `dist/` (Vercel, Netlify etc.), com HTTPS.
+2. **Vercel**: importe o repositório em vercel.com/new (framework Vite, já configurado em `vercel.json`). Não precisa de variáveis: a URL e a chave pública do Supabase e o link do GPT já estão em `src/config.ts` (o `.env` pode sobrescrever).
 4. No painel do Supabase, **Authentication > URL Configuration**: coloque o domínio do app em *Site URL* e *Redirect URLs*.
 5. **"Esqueci minha senha"** envia e-mail: para funcionar com qualquer usuária, configure um SMTP próprio em **Authentication > Emails > SMTP** (ex.: Resend, Brevo). O e-mail padrão do Supabase só envia para membros da equipe do projeto. Cadastro e login não dependem de e-mail.
 6. Opcional: excluir a função antiga `purchase-webhook` em **Edge Functions** (está desativada e não faz nada).

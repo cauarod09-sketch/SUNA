@@ -39,6 +39,10 @@ export const ASSETS = {
 
 /** Modo demonstração: só existe quando pedido explicitamente. Sem servidor. Não publicar assim. */
 export const DEMO_MODE = env.VITE_DEMO_MODE === 'true';
-export const SUPABASE_URL = (env.VITE_SUPABASE_URL ?? '').trim();
-export const SUPABASE_ANON_KEY = (env.VITE_SUPABASE_ANON_KEY ?? '').trim();
+// Projeto Supabase "suna" (sa-east-1). São chaves PÚBLICAS (publishable): podem ficar no código.
+// O .env pode sobrescrever. Nunca coloque a chave service_role aqui.
+const DEFAULT_SUPABASE_URL = 'https://fxfpvqzyfopemdxllosn.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_0J8z-SBeN0CJC2jBc0OYmg_QoEobzU9';
+export const SUPABASE_URL = (env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+export const SUPABASE_ANON_KEY = (env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY).trim();
 export const CONFIG_MISSING = !DEMO_MODE && (!SUPABASE_URL || !SUPABASE_ANON_KEY);
