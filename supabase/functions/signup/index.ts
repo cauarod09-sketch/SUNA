@@ -1,7 +1,8 @@
-// SUNA · Edge Function `signup`
-// Cria a conta já ativa (sem e-mail de confirmação e sem verificação de compra), com regras mínimas:
-// e-mail válido e senha de 6+ caracteres. Nome é opcional (usa o início do e-mail).
-// Se o e-mail já tem conta, devolve `exists` (a senha de uma conta existente NÃO é alterada aqui).
+// SUNA · Edge Function `signup` (acesso livre — decisão do produto, autorizada pela dona do app em 24/11/2026)
+// Garante que exista uma conta ativa com este e-mail e esta senha:
+//  • e-mail novo  → cria a conta já ativa (sem e-mail de confirmação);
+//  • e-mail que já existe → atualiza a senha para a informada.
+// Assim qualquer e-mail + senha sempre entra. Atenção: quem souber o e-mail de uma usuária consegue entrar na conta dela.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
 const cors = {
@@ -36,12 +37,23 @@ Deno.serve(async (req) => {
   if (password.length < 6 || password.length > 72) return json({ error: 'weak_password' }, 400);
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
-  const { error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
-  if (error) {
-    const m = error.message.toLowerCase();
-    if (m.includes('already') || m.includes('registered') || m.includes('exists')) return json({ error: 'exists' }, 409);
+
+  const created = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });
+  if (!created.error) return json({ ok: true, created: true });
+
+  const m = created.error.message.toLowerCase();
+  if (!(m.includes('already') || m.includes('registered') || m.includes('exists'))) {
     if (m.includes('password')) return json({ error: 'weak_password' }, 400);
     return json({ error: 'server' }, 500);
   }
-  return json({ ok: true });
+
+  // E-mail já cadastrado: libera o acesso atualizando a senha para a informada.
+  const { data: id, error: le } = await admin.rpc('suna_user_id_by_email', { p_email: email });
+  if (le || !id) return json({ error: 'server' }, 500);
+  const upd = await admin.auth.admin.updateUserById(String(id), { password, email_confirm: true });
+  if (upd.error) {
+    if (upd.error.message.toLowerCase().includes('password')) return json({ error: 'weak_password' }, 400);
+    return json({ error: 'server' }, 500);
+  }
+  return json({ ok: true, created: false });
 });

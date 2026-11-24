@@ -178,3 +178,15 @@ end $$;
 
 revoke all on function public.suna_bootstrap() from public, anon;
 grant execute on function public.suna_bootstrap() to authenticated;
+
+-- ---------------------------------------------------------------------
+-- Acesso livre: a Edge Function `signup` acha a conta pelo e-mail para atualizar a senha
+-- ---------------------------------------------------------------------
+create or replace function public.suna_user_id_by_email(p_email text)
+returns uuid
+language sql stable security definer
+set search_path = public, auth, pg_temp
+as $$ select id from auth.users where lower(email) = lower(trim(p_email)) limit 1; $$;
+
+revoke all on function public.suna_user_id_by_email(text) from public, anon, authenticated;
+grant execute on function public.suna_user_id_by_email(text) to service_role;
