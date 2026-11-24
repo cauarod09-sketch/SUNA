@@ -61,3 +61,10 @@ Tudo é salvo sozinho (checkbox na hora, textos ~0,7 s depois de parar de digita
 - Conferido no navegador em 375px, modo demonstração: boas-vindas → cadastro (validações) → primeiro acesso na aba SUNA com anel amarelo → link do GPT em nova aba → Início com conversa automática, digitação e pular → revelar e concluir desafio → Rotina (bloqueio de dias futuros, checklists, anotação, salvamento) → recarregar sem perder nada → Evolução (3,6% = 3/84) → Dia 7 com conquista → Dia 21 com tela final.
 - Verificado no Supabase real (07/11/2026): cadastro com qualquer e-mail cria conta ativa, login na hora, e-mail repetido recusado, Dia 1 gravado, Dia 2 recusado antes da meia-noite, sem login nada é lido.
 - **Não verificado ainda**: recuperação de senha (precisa de SMTP).
+
+## Acesso e internet (atualização 24/11/2026)
+
+- **Causa da queda:** o projeto Supabase gratuito tinha sido pausado por falta de uso, então ninguém conseguia entrar. Ele foi reativado, e `api/keepalive.js` (Cron diário da Vercel em `vercel.json`) faz uma consulta leve todo dia para ele não pausar de novo.
+- **Funciona sem internet:** se o servidor não responder, o app abre com os dados guardados no aparelho, mostra "Sem conexão agora" e "Salvo no aparelho", e envia tudo sozinho quando a conexão volta (tenta a cada 15 s e quando o celular volta a ficar online).
+- **Cadastro/login sem barreiras:** e-mail válido + senha de 6 caracteres; nome opcional. Sem internet, a conta fica no aparelho e é criada no servidor quando a conexão voltar.
+- **E-mail que já tem conta com outra senha:** o app avisa para entrar com a senha do cadastro. (Trocar a senha de uma conta existente sem confirmação ficou de fora.)

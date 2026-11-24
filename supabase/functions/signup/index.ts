@@ -1,7 +1,7 @@
 // SUNA · Edge Function `signup`
-// Cria a conta já ativa, sem e-mail de confirmação e sem verificação de compra.
-// O acesso ao app é distribuído só para quem comprou (fora do app); o Supabase apenas guarda contas e registros.
-// O app chama esta função no cadastro e, em seguida, faz login com e-mail e senha.
+// Cria a conta já ativa (sem e-mail de confirmação e sem verificação de compra), com regras mínimas:
+// e-mail válido e senha de 6+ caracteres. Nome é opcional (usa o início do e-mail).
+// Se o e-mail já tem conta, devolve `exists` (a senha de uma conta existente NÃO é alterada aqui).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.57.4';
 
 const cors = {
@@ -28,14 +28,12 @@ Deno.serve(async (req) => {
   } catch {
     return json({ error: 'invalid' }, 400);
   }
-  const name = String(body?.name ?? '').trim().slice(0, 80);
   const email = String(body?.email ?? '').trim().toLowerCase();
   const password = String(body?.password ?? '');
+  const name = String(body?.name ?? '').trim().slice(0, 80) || email.split('@')[0].slice(0, 80);
 
-  if (name.length < 2) return json({ error: 'name' }, 400);
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email) || email.length > 254) return json({ error: 'email' }, 400);
-  if (password.length < 8 || password.length > 72 || !/[A-Za-z]/.test(password) || !/\d/.test(password))
-    return json({ error: 'weak_password' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) return json({ error: 'email' }, 400);
+  if (password.length < 6 || password.length > 72) return json({ error: 'weak_password' }, 400);
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
   const { error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name } });

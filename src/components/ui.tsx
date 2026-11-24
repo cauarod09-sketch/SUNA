@@ -90,10 +90,27 @@ export function SaveIndicator() {
         <Check size={13} /> Salvo
       </span>
     );
+  if (saveState === 'local')
+    return (
+      <span className="save-pill is-local" role="status">
+        <Check size={13} /> Salvo no aparelho
+      </span>
+    );
   return (
     <button className="save-pill is-error" onClick={retrySave} role="alert">
       <AlertCircle size={13} /> Não salvou · <RotateCw size={12} /> Tentar de novo
     </button>
+  );
+}
+
+/** Aviso discreto: sem conexão, o app continua funcionando e sincroniza sozinho depois. */
+export function OfflineBanner() {
+  const { offline } = useApp();
+  if (!offline) return null;
+  return (
+    <div className="offline-bar" role="status">
+      Sem conexão agora. Tudo continua salvo no seu aparelho e será enviado sozinho quando a internet voltar.
+    </div>
   );
 }
 

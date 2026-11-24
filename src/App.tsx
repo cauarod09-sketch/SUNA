@@ -10,7 +10,7 @@ import { Rotina } from './screens/Rotina';
 import { SunaTab } from './screens/SunaTab';
 import { FinalOverlay, MilestoneOverlay } from './components/Overlays';
 import { ShellCtx, type ShellApi, type Tab } from './components/shell-context';
-import { Character, Logo } from './components/ui';
+import { Character, Logo, OfflineBanner } from './components/ui';
 
 export default function App() {
   return (
@@ -117,6 +117,7 @@ function Shell() {
 
   return (
     <ShellCtx.Provider value={api}>
+      <OfflineBanner />
       <div className="app">
         <main className="main" key={tab}>
           {tab === 'inicio' && <Inicio />}

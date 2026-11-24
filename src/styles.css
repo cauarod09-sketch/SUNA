@@ -1851,3 +1851,22 @@ a {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------- Offline ---------- */
+.save-pill.is-local {
+  color: #9a6b12;
+  background: var(--sun-100);
+  border-color: transparent;
+}
+.offline-bar {
+  position: sticky;
+  top: 0;
+  z-index: 35;
+  background: var(--sun-100);
+  color: #7a5a12;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  text-align: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--sun-300);
+}

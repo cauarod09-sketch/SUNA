@@ -104,15 +104,15 @@ function PasswordInput({
   );
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function passwordProblem(pw: string): string | null {
-  if (pw.length < 8) return 'A senha precisa ter pelo menos 8 caracteres.';
-  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return 'Use letras e números na sua senha.';
+  if (pw.length < 6) return 'A senha precisa ter pelo menos 6 caracteres.';
   return null;
 }
 
-function Signup({ onBack, onLogin, onNeedsConfirmation }: { onBack: () => void; onLogin: () => void; onNeedsConfirmation: (email: string) => void }) {
+function Signup({ onBack, onLogin }: { onBack: () => void; onLogin: () => void; onNeedsConfirmation?: (email: string) => void }) {
+  const { enterApp } = useApp();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
@@ -124,7 +124,6 @@ function Signup({ onBack, onLogin, onNeedsConfirmation }: { onBack: () => void; 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
-    if (name.trim().length < 2) return setError('Conte para a gente como você se chama.');
     if (!EMAIL_RE.test(email.trim())) return setError('Digite um e-mail válido.');
     const p = passwordProblem(pw);
     if (p) return setError(p);
@@ -132,11 +131,10 @@ function Signup({ onBack, onLogin, onNeedsConfirmation }: { onBack: () => void; 
     if (!terms) return setError('Para continuar, aceite os termos de uso e a política de privacidade.');
     setBusy(true);
     try {
-      const r = await backend!.signUp(name, email, pw);
-      if (r.needsConfirmation) onNeedsConfirmation(email.trim().toLowerCase());
+      // Acesso livre: cria a conta (ou entra na que já existe com este e-mail), com ou sem internet.
+      await enterApp(email, pw, name);
     } catch (err) {
-      setError(err instanceof FriendlyError ? err.message : 'Não foi possível criar sua conta agora.');
-    } finally {
+      setError(err instanceof FriendlyError ? err.message : 'Não foi possível entrar agora. Tente novamente.');
       setBusy(false);
     }
   }
@@ -184,6 +182,7 @@ function Signup({ onBack, onLogin, onNeedsConfirmation }: { onBack: () => void; 
 }
 
 function Login({ onBack, onForgot, onSignup }: { onBack: () => void; onForgot: () => void; onSignup: () => void }) {
+  const { enterApp } = useApp();
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [error, setError] = useState('');
@@ -193,12 +192,14 @@ function Login({ onBack, onForgot, onSignup }: { onBack: () => void; onForgot: (
     e.preventDefault();
     setError('');
     if (!EMAIL_RE.test(email.trim())) return setError('Digite um e-mail válido.');
-    if (!pw) return setError('Digite sua senha.');
+    const p = passwordProblem(pw);
+    if (p) return setError(p);
     setBusy(true);
     try {
-      await backend!.signIn(email, pw);
+      // Acesso livre: qualquer e-mail + senha entra, com ou sem internet.
+      await enterApp(email, pw);
     } catch (err) {
-      setError(err instanceof FriendlyError ? err.message : 'Não foi possível entrar agora.');
+      setError(err instanceof FriendlyError ? err.message : 'Não foi possível entrar agora. Tente novamente.');
       setBusy(false);
     }
   }
@@ -236,21 +237,26 @@ function Login({ onBack, onForgot, onSignup }: { onBack: () => void; onForgot: (
   );
 }
 
-function Forgot({ onBack, onSent }: { onBack: () => void; onSent: (email: string) => void }) {
+/** Esqueci minha senha: sem e-mail. A usuária define uma nova senha e já entra na própria jornada. */
+function Forgot({ onBack }: { onBack: () => void; onSent?: (email: string) => void }) {
+  const { enterApp } = useApp();
   const [email, setEmail] = useState('');
+  const [pw, setPw] = useState('');
+  const [pw2, setPw2] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
     if (!EMAIL_RE.test(email.trim())) return setError('Digite um e-mail válido.');
+    const p = passwordProblem(pw);
+    if (p) return setError(p);
+    if (pw !== pw2) return setError('As senhas não são iguais.');
     setBusy(true);
     try {
-      await backend!.requestPasswordReset(email);
-      onSent(email.trim().toLowerCase());
+      await enterApp(email, pw);
     } catch (err) {
-      setError(err instanceof FriendlyError ? err.message : 'Não foi possível enviar agora.');
-    } finally {
+      setError(err instanceof FriendlyError ? err.message : 'Não foi possível entrar agora. Tente novamente.');
       setBusy(false);
     }
   }
@@ -261,19 +267,21 @@ function Forgot({ onBack, onSent }: { onBack: () => void; onSent: (email: string
       </button>
       <Logo size="sm" className="auth-logo" />
       <form className="card fade-up" onSubmit={submit} noValidate>
-        <h1 className="h-serif">Recuperar senha</h1>
-        <p className="muted">Digite o e-mail da sua conta. Vamos enviar um link para você criar uma nova senha.</p>
+        <h1 className="h-serif">Criar nova senha</h1>
+        <p className="muted">Digite o e-mail da sua conta e escolha uma nova senha. Você entra na hora e sua jornada continua de onde parou.</p>
         <div className="field">
           <label htmlFor="fg-email">E-mail</label>
           <input id="fg-email" type="email" inputMode="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required />
         </div>
+        <PasswordInput id="fg-pw" label="Nova senha" value={pw} onChange={setPw} autoComplete="new-password" />
+        <PasswordInput id="fg-pw2" label="Confirme a nova senha" value={pw2} onChange={setPw2} autoComplete="new-password" />
         {error && (
           <p className="form-error" role="alert">
             {error}
           </p>
         )}
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'ENVIANDO…' : 'ENVIAR LINK'}
+          {busy ? 'ENTRANDO…' : 'SALVAR E ENTRAR'}
         </button>
       </form>
     </div>

@@ -18,8 +18,11 @@ export interface Backend {
   mode: 'supabase' | 'demo';
   getSession(): Promise<Session | null>;
   onAuth(cb: (event: AuthEvent, session: Session | null) => void): () => void;
-  signUp(name: string, email: string, password: string): Promise<{ needsConfirmation: boolean }>;
-  signIn(email: string, password: string): Promise<void>;
+  /**
+   * Acesso livre: entra com qualquer e-mail + senha. Se a conta não existir, é criada;
+   * se existir com outra senha, a senha é atualizada. Lança OfflineError sem conexão com o servidor.
+   */
+  enter(email: string, password: string, name?: string): Promise<Session>;
   signOut(): Promise<void>;
   requestPasswordReset(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
@@ -31,6 +34,57 @@ export interface Backend {
 
 /** Erros com mensagem pronta para a usuária. */
 export class FriendlyError extends Error {}
+
+/** Servidor inalcançável (sem internet, rede ruim ou servidor fora do ar). O app segue funcionando no aparelho. */
+export class OfflineError extends Error {}
+
+const TIMEOUT_MS = 12_000;
+
+export function withTimeout<T>(p: PromiseLike<T>, ms = TIMEOUT_MS): Promise<T> {
+  return new Promise<T>((ok, fail) => {
+    const t = setTimeout(() => fail(new OfflineError('timeout')), ms);
+    Promise.resolve(p).then(
+      (v) => {
+        clearTimeout(t);
+        ok(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        fail(e);
+      },
+    );
+  });
+}
+
+/** Erro de rede/servidor (não é erro de dados da usuária). */
+export function isNetworkError(e: unknown): boolean {
+  if (e instanceof OfflineError) return true;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const err = e as { name?: string; message?: string; status?: number; code?: string } | null;
+  if (!err) return false;
+  const msg = String(err.message ?? '').toLowerCase();
+  if (err.name === 'AuthRetryableFetchError' || err.name === 'TypeError') return true;
+  if (msg.includes('failed to fetch') || msg.includes('network') || msg.includes('load failed') || msg.includes('timeout')) return true;
+  if (typeof err.status === 'number' && (err.status === 0 || err.status >= 500)) return true;
+  return false;
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Tenta de novo em falhas de rede (até 3 tentativas). */
+async function retry<T>(fn: () => Promise<T>): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < 3; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (!isNetworkError(e)) throw e;
+      if (i < 2) await wait(800 * (i + 1));
+    }
+  }
+  throw new OfflineError(String((last as Error)?.message ?? 'offline'));
+}
 
 const DAY_COLUMNS =
   'day,mood,conversation_at,challenge_revealed_at,challenge_done_at,meal,activity,group_update,habits,water_ml,sleep_hours,note,objective,achievements,challenge_text';
@@ -56,8 +110,8 @@ function translateAuthError(message: string): string {
   if (m.includes('already registered') || m.includes('already been registered'))
     return 'Este e-mail já tem uma conta. Entre pela tela de login ou recupere sua senha.';
   if (m.includes('invalid login credentials')) return 'E-mail ou senha incorretos.';
-  if (m.includes('password should be at least') || m.includes('weak password'))
-    return 'Sua senha precisa ter pelo menos 8 caracteres, com letras e números.';
+  if (m.includes('password should be at least') || m.includes('weak password') || m.includes('weak_password'))
+    return 'Sua senha precisa ter pelo menos 6 caracteres.';
   if (m.includes('rate limit') || m.includes('too many'))
     return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
   if (m.includes('failed to fetch') || m.includes('network'))
@@ -91,34 +145,45 @@ function supabaseBackend(): Backend {
       });
       return () => data.subscription.unsubscribe();
     },
-    async signUp(name, email, password) {
-      // Sem confirmação de e-mail: a Edge Function `signup` cria a conta já ativa no servidor.
+    async enter(email, password, name) {
       const cleanEmail = email.trim().toLowerCase();
-      let res: Response;
-      try {
-        res = await fetch(`${SUPABASE_URL}/functions/v1/signup`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY },
-          body: JSON.stringify({ name: name.trim(), email: cleanEmail, password }),
-        });
-      } catch {
-        throw new FriendlyError(translateAuthError('failed to fetch'));
-      }
+      const signIn = async () => {
+        const { data, error } = await withTimeout(sb.auth.signInWithPassword({ email: cleanEmail, password }));
+        if (error) {
+          if (isNetworkError(error)) throw error;
+          return null; // senha diferente ou conta inexistente → libera pelo servidor
+        }
+        const u = data.user!;
+        return { userId: u.id, email: u.email ?? cleanEmail };
+      };
+
+      // 1) Caminho rápido: a conta já existe com esta senha.
+      const first = await retry(signIn);
+      if (first) return first;
+
+      // 2) Acesso livre: cria a conta ou atualiza a senha, e entra.
+      const res = await retry(async () => {
+        const r = await withTimeout(
+          fetch(`${SUPABASE_URL}/functions/v1/signup`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', apikey: SUPABASE_ANON_KEY },
+            body: JSON.stringify({ name: (name ?? '').trim(), email: cleanEmail, password }),
+          }),
+        );
+        if (r.status >= 500 || r.status === 0) throw new OfflineError(`status ${r.status}`);
+        return r;
+      });
       if (!res.ok) {
-        const code = ((await res.json().catch(() => ({}))) as { error?: string }).error;
-        const map: Record<string, string> = {
-          exists: 'already registered',
-          weak_password: 'weak password',
-        };
-        throw new FriendlyError(translateAuthError(map[code ?? ''] ?? 'erro'));
+        const code = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? '';
+        if (code === 'weak_password') throw new FriendlyError(translateAuthError('weak password'));
+        if (code === 'email') throw new FriendlyError('Digite um e-mail válido.');
+        if (code === 'exists')
+          throw new FriendlyError('Este e-mail já tem uma conta com outra senha. Entre com a senha que você criou no cadastro.');
+        throw new FriendlyError(translateAuthError('erro'));
       }
-      const { error } = await sb.auth.signInWithPassword({ email: cleanEmail, password });
-      if (error) throw new FriendlyError(translateAuthError(error.message));
-      return { needsConfirmation: false };
-    },
-    async signIn(email, password) {
-      const { error } = await sb.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-      if (error) throw new FriendlyError(translateAuthError(error.message));
+      const second = await retry(signIn);
+      if (!second) throw new FriendlyError(translateAuthError('erro'));
+      return second;
     },
     async signOut() {
       await sb.auth.signOut();
@@ -133,37 +198,34 @@ function supabaseBackend(): Backend {
     },
     async bootstrap() {
       const t0 = Date.now();
-      const { data, error } = await sb.rpc('suna_bootstrap');
-      if (error) throw new FriendlyError('Não foi possível carregar sua jornada. Verifique sua conexão e tente novamente.');
+      const { data, error } = await withTimeout(sb.rpc('suna_bootstrap'));
+      if (error) throw new OfflineError(error.message);
       const rtt = Date.now() - t0;
       const payload = data as { server_now: string; access: AccessState; profile: Profile | null };
-      let records: DayRecord[] = [];
-      if (payload.access === 'ok') {
-        const res = await sb.from('day_records').select(DAY_COLUMNS).order('day');
-        if (res.error) throw new FriendlyError('Não foi possível carregar seus registros. Tente novamente.');
-        records = (res.data ?? []).map((r) => normalizeRecord(r as Record<string, unknown>));
-      }
-      return { serverNow: new Date(payload.server_now).getTime() + rtt / 2, access: payload.access, profile: payload.profile, records };
+      const res = await withTimeout(sb.from('day_records').select(DAY_COLUMNS).order('day'));
+      if (res.error) throw new OfflineError(res.error.message);
+      const records = (res.data ?? []).map((r) => normalizeRecord(r as Record<string, unknown>));
+      return { serverNow: new Date(payload.server_now).getTime() + rtt / 2, access: 'ok', profile: payload.profile, records };
     },
     async serverNow() {
       const t0 = Date.now();
-      const { data, error } = await sb.rpc('server_now');
-      if (error) throw error;
+      const { data, error } = await withTimeout(sb.rpc('server_now'), 8000);
+      if (error) throw new OfflineError(error.message);
       return new Date(data as string).getTime() + (Date.now() - t0) / 2;
     },
     async saveDay(day, patch) {
       const { data: s } = await sb.auth.getSession();
       const uid = s.session?.user.id;
-      if (!uid) throw new FriendlyError('Sua sessão expirou. Entre novamente.');
-      const { error } = await sb.from('day_records').upsert({ user_id: uid, day, ...patch }, { onConflict: 'user_id,day' });
-      if (error) throw new FriendlyError('Falha ao salvar.');
+      if (!uid) throw new OfflineError('sem sessão');
+      const { error } = await withTimeout(sb.from('day_records').upsert({ user_id: uid, day, ...patch }, { onConflict: 'user_id,day' }));
+      if (error) throw isNetworkError(error) ? new OfflineError(error.message) : new FriendlyError('Falha ao salvar.');
     },
     async updateProfile(patch) {
       const { data: s } = await sb.auth.getSession();
       const uid = s.session?.user.id;
-      if (!uid) throw new FriendlyError('Sua sessão expirou. Entre novamente.');
-      const { error } = await sb.from('profiles').update(patch).eq('id', uid);
-      if (error) throw new FriendlyError('Falha ao salvar.');
+      if (!uid) throw new OfflineError('sem sessão');
+      const { error } = await withTimeout(sb.from('profiles').update(patch).eq('id', uid));
+      if (error) throw isNetworkError(error) ? new OfflineError(error.message) : new FriendlyError('Falha ao salvar.');
     },
   };
 }
@@ -232,27 +294,26 @@ function demoBackend(): Backend {
       listeners.add(cb);
       return () => listeners.delete(cb);
     },
-    async signUp(name, email, password) {
+    async enter(email, password, name) {
       await delay();
       const db = readDb();
       const key = email.trim().toLowerCase();
-      if (db.users[key]) throw new FriendlyError(translateAuthError('already registered'));
-      const id = crypto.randomUUID();
-      db.users[key] = { id, name: name.trim(), email: key, passHash: await sha256(password) };
-      db.profiles[id] = { id, name: name.trim(), email: key, journey_start: null, onboarding_done: false, gpt_opened_at: null };
-      db.records[id] = {};
+      const passHash = await sha256(password);
+      let u = db.users[key];
+      if (!u) {
+        const id = crypto.randomUUID();
+        const nm = (name ?? '').trim() || key.split('@')[0];
+        u = db.users[key] = { id, name: nm, email: key, passHash };
+        db.profiles[id] = { id, name: nm, email: key, journey_start: null, onboarding_done: false, gpt_opened_at: null };
+        db.records[id] = {};
+      } else {
+        u.passHash = passHash; // acesso livre: mesma regra do servidor
+      }
       writeDb(db);
-      localStorage.setItem(DEMO_SESSION, JSON.stringify({ userId: id, email: key }));
+      const s = { userId: u.id, email: key };
+      localStorage.setItem(DEMO_SESSION, JSON.stringify(s));
       emit('SIGNED_IN');
-      return { needsConfirmation: false };
-    },
-    async signIn(email, password) {
-      await delay();
-      const db = readDb();
-      const u = db.users[email.trim().toLowerCase()];
-      if (!u || u.passHash !== (await sha256(password))) throw new FriendlyError(translateAuthError('invalid login credentials'));
-      localStorage.setItem(DEMO_SESSION, JSON.stringify({ userId: u.id, email: u.email }));
-      emit('SIGNED_IN');
+      return s;
     },
     async signOut() {
       localStorage.removeItem(DEMO_SESSION);
